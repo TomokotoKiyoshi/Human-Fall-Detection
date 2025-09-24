@@ -16,3 +16,8 @@ yolo_models/*.pt
 data/
 features/
 test_src/
+
+# Pypi
+.pypirc
+MANIFEST.in
+human_fall_detection.egg-info/
