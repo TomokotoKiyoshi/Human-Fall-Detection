@@ -7,9 +7,6 @@
 </div>
 
 [![PyPI](https://img.shields.io/pypi/v/human-fall-detection?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/human-fall-detection/)
-[![Python](https://img.shields.io/pypi/pyversions/human-fall-detection?style=for-the-badge&logo=python&logoColor=white)](https://pypi.org/project/human-fall-detection/)
-[![Downloads](https://img.shields.io/pypi/dm/human-fall-detection?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/human-fall-detection/)
-[![License](https://img.shields.io/pypi/l/human-fall-detection?style=for-the-badge)](https://github.com/TomokotoKiyoshi/Human-Fall-Detection/blob/main/LICENSE)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8-00FFFF?style=for-the-badge&logo=yolo&logoColor=black)](https://github.com/ultralytics/ultralytics)
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 
