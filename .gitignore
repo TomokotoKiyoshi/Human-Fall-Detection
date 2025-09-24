@@ -16,6 +16,7 @@ yolo_models/*.pt
 data/
 features/
 test_src/
+results/evaluation/test_evaluation/labels
 
 # Pypi
 .pypirc

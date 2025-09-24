@@ -17,11 +17,11 @@ YOLOv8-based static image fall detection system with support for real-time video
 - [🚨 Human Fall Detection System](#-human-fall-detection-system)
   - [📋 Table of Contents](#-table-of-contents)
   - [🎯 Introduction](#-introduction)
-    - [Core Advantages](#core-advantages)
   - [📊 Model Performance](#-model-performance)
     - [Class-wise Performance](#class-wise-performance)
       - [🟢 Normal State](#-normal-state)
       - [🔴 Fall State](#-fall-state)
+      - [✅ Performance Highlights](#-performance-highlights)
   - [💾 Installation](#-installation)
     - [Method 1: pip Installation (Recommended)](#method-1-pip-installation-recommended)
     - [Method 2: Install from Source](#method-2-install-from-source)
@@ -38,36 +38,34 @@ YOLOv8-based static image fall detection system with support for real-time video
 
 This project is a deep learning-based human fall detection system that achieves high-precision fall detection using a fine-tuned YOLOv8 model. The system can be applied to elderly care, hospital monitoring, smart home scenarios, and other contexts to promptly detect fall events and trigger alerts.
 
-### Core Advantages
-
-- 🔥 **High Accuracy**: mAP@0.5 reaches 94.85%, F1-Score reaches 92.02%
-- ⚡ **Real-time Detection**: Supports real-time video stream processing
-- 📦 **Easy to Deploy**: Provides Python package with pip installation support
-- 🎨 **Visualization**: Automatically annotates detection results and generates marked videos
-
 ## 📊 Model Performance
 
-Evaluation results based on test dataset (973 images):
+Evaluation results based on test dataset:
 
 | Metric                | Value  | Description                       |
 | --------------------- | ------ | --------------------------------- |
-| **mAP@0.5**           | 94.85% | Primary performance indicator     |
-| **mAP@0.5:0.95**      | 45.50% | Stricter evaluation standard      |
-| **F1-Score**          | 92.02% | Harmonic mean of precision/recall |
-| **Overall Precision** | 92.46% | Accuracy of all detections        |
-| **Overall Recall**    | 91.58% | Proportion of detected targets    |
+| **mAP@0.5**           | 90.61% | Primary performance indicator     |
+| **mAP@0.5:0.95**      | 39.63% | Stricter evaluation standard      |
+| **F1-Score**          | 88.60% | Harmonic mean of precision/recall |
+| **Overall Precision** | 90.13% | Accuracy of all detections        |
+| **Overall Recall**    | 87.11% | Proportion of detected targets    |
 
 ### Class-wise Performance
 
 #### 🟢 Normal State
-- AP@0.5: 94.46%
-- Precision: 91.70%
-- Recall: 91.89%
+- AP@0.5: 86.22%
+- Precision: 90.75%
+- Recall: 80.36%
 
 #### 🔴 Fall State
-- AP@0.5: 95.23%
-- Precision: 93.21%
-- Recall: 91.26%
+- AP@0.5: 95.00%
+- Precision: 89.51%
+- Recall: 93.86%
+
+#### ✅ Performance Highlights
+- Excellent fall detection sensitivity (93.86% recall)
+- Low false alarm rate (<10% false positives)
+- Outstanding overall detection performance (mAP > 90%)
 
 
 ## 💾 Installation
