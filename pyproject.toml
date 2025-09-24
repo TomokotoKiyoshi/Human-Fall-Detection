@@ -1,0 +1,28 @@
+[project]
+name = "human-fall-detection"
+version = "0.1.0"
+description = "Static fall detection based on YOLOv8n"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ipython>=9.5.0",
+    "pip>=25.2",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
+    "ultralytics>=8.3.202",
+]
+
+[project.urls]
+Homepage = "https://github.com/TomokotoKiyoshi/Human-Fall-Detection.git"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["fall_detection"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+fall_detection = ["models/*.pt"]

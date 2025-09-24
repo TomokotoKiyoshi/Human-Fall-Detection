@@ -1,0 +1,18 @@
+# YOLOv8 摔倒检测数据集配置
+# 用于微调YOLOv8n模型
+
+# 数据集根目录
+path: ./data
+
+# 数据集划分（相对于path）
+train: images/train  # 训练集图像
+val: images/val      # 验证集图像
+test: images/test    # 测试集图像
+
+# 类别数量
+nc: 2
+
+# 类别名称
+names:
+  0: Normal   # 正常（未摔倒）
+  1: Fall     # 摔倒

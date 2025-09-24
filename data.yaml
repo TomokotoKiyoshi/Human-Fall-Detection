@@ -1,0 +1,13 @@
+# YOLOv8 Dataset Configuration
+path: .  # dataset root dir
+train: data/train  # train images
+val: data/val  # val images
+test: data/test  # test images (optional)
+
+# Classes
+names:
+  0: fallen_person
+  1: nonfallen_person
+
+# Number of classes
+nc: 2
