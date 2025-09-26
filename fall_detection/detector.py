@@ -9,16 +9,9 @@ Provides FallDetector class using YOLOv8 model.
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Generator, Any, Union
+from typing import Dict, List, Tuple, Generator, Any, Optional
 from ultralytics import YOLO
-
-# ONNX推理支持
-try:
-    import onnxruntime as ort
-    ONNX_AVAILABLE = True
-except ImportError:
-    ONNX_AVAILABLE = False
-    print("Warning: onnxruntime not installed. ONNX model support disabled.")
+import onnxruntime as ort
 
 __all__ = ['FallDetector']
 
@@ -31,103 +24,43 @@ class FallDetector:
     """
 
     def __init__(self,
-                 model_path: Optional[str] = None,
+                 model_type: str = "onnx",
                  device: str = "cuda",
                  confidence: float = 0.5):
         """Initialize the fall detector.
 
         Args:
-            model_path (Optional[str], optional): Path to model file (.pt or .onnx). If None, auto-search for model. Defaults to None.
-            device (str, optional): Device to run inference on. Defaults to "cuda".
-            confidence (float, optional): Detection confidence threshold. Defaults to 0.5.
-
-        Raises:
-            FileNotFoundError: If model file cannot be found when auto-searching.
+            model_type (str): Model type - 'pt' for PyTorch or 'onnx' for ONNX FP16. Defaults to "onnx".
+            device (str): Device to run inference on. Defaults to "cuda".
+            confidence (float): Detection confidence threshold. Defaults to 0.5.
         """
         self.device = device
         self.confidence = confidence
-        self.model_path = None
-        self.model_type = None  # "pt" or "onnx"
+        self.model_type = model_type
         self.model = None
         self.ort_session = None
         self.input_name = None
         self.input_shape = None
 
-        self._load_model(model_path)
-
-    def _load_model(self, model_path: Optional[str] = None) -> Optional[Union[YOLO, None]]:
-        """Load model from file (supports .pt and .onnx).
-
-        Args:
-            model_path (Optional[str], optional): Path to the model file. If None, searches in default locations. Defaults to None.
-
-        Returns:
-            Optional[Union[YOLO, None]]: YOLO model for .pt files, None for .onnx files (uses ort_session instead).
-
-        Raises:
-            FileNotFoundError: If model file cannot be found in specified path or default locations.
-            ValueError: If ONNX model is specified but onnxruntime is not installed.
-        """
-        if model_path is None:
-            # Auto-search for model
-            # First try package directory (for pip installed version)
-            package_dir = Path(__file__).resolve().parent / 'models'
-
-            # Try ONNX first (faster), then PT
-            for ext in ['.onnx', '_fp16.onnx', '.pt']:
-                model_file = package_dir / f'best{ext}' if ext != '.pt' else package_dir / 'best.pt'
-                if model_file.exists():
-                    model_path = str(model_file)
-                    break
-
-            if model_path is None:
-                # Fallback to project structure (for development)
-                project_root = Path(__file__).resolve().parent.parent
-                possible_paths = [
-                    project_root / 'fall_detection' / 'models' / 'best_fp16.onnx',
-                    project_root / 'fall_detection' / 'models' / 'best.onnx',
-                    project_root / 'fall_detection' / 'models' / 'best.pt',
-                    project_root / 'results' / 'models' / 'fall_detection' / 'weights' / 'best.pt',
-                ]
-
-                for path in possible_paths:
-                    if path.exists():
-                        model_path = str(path)
-                        break
-
-            if model_path is None:
-                raise FileNotFoundError(
-                    "Model file not found. Please run training script first or specify model_path."
-                )
-
-        self.model_path = Path(model_path)
-
-        # Determine model type by extension
-        if self.model_path.suffix.lower() == '.onnx':
-            self.model_type = 'onnx'
-            if not ONNX_AVAILABLE:
-                raise ValueError("ONNX model specified but onnxruntime is not installed. "
-                               "Install it with: pip install onnxruntime-gpu")
-            self._load_onnx_model()
-            return None
-        else:
-            self.model_type = 'pt'
+        # Get model path relative to this file
+        base_dir = Path(__file__).parent
+        if model_type == "pt":
+            self.model_path = base_dir / 'models' / 'best.pt'
             self.model = YOLO(str(self.model_path))
-            return self.model
+        elif model_type == "onnx":
+            self.model_path = base_dir / 'models' / 'best_fp16.onnx'
+            self._load_onnx_model()
+        else:
+            raise ValueError(f"Invalid model_type: {model_type}. Must be 'pt' or 'onnx'")
+
 
     def _load_onnx_model(self) -> None:
         """Load ONNX model using onnxruntime."""
-        # 创建推理会话
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if 'cuda' in self.device else ['CPUExecutionProvider']
         self.ort_session = ort.InferenceSession(str(self.model_path), providers=providers)
-
-        # 获取输入输出信息
         self.input_name = self.ort_session.get_inputs()[0].name
-        self.input_shape = self.ort_session.get_inputs()[0].shape  # [batch, channel, height, width]
+        self.input_shape = self.ort_session.get_inputs()[0].shape
         self.output_names = [output.name for output in self.ort_session.get_outputs()]
-
-        print(f"ONNX model loaded: {self.model_path.name}")
-        print(f"Input shape: {self.input_shape}, Providers: {providers}")
 
     def _preprocess_onnx(self, image: np.ndarray) -> np.ndarray:
         """Preprocess image for ONNX inference.

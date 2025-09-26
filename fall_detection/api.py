@@ -15,6 +15,7 @@ from .detector import FallDetector
 
 def process_video(input_path: str,
                  output_path: Optional[str] = None,
+                 model_type: str = "onnx",
                  confidence: float = 0.5,
                  device: str = "cuda",
                  show_progress: bool = True) -> Dict[str, Any]:
@@ -23,6 +24,7 @@ def process_video(input_path: str,
     Args:
         input_path (str): Path to input video file.
         output_path (Optional[str], optional): Path to save annotated video. If None, no output is saved. Defaults to None.
+        model_type (str, optional): Model type - 'pt' for PyTorch or 'onnx' for ONNX FP16. Defaults to "onnx".
         confidence (float, optional): Detection confidence threshold. Defaults to 0.5.
         device (str, optional): Device to run inference on ("cuda" or "cpu"). Defaults to "cuda".
         show_progress (bool, optional): Whether to print progress updates. Defaults to True.
@@ -49,7 +51,7 @@ def process_video(input_path: str,
         raise FileNotFoundError(f"Video file not found: {input_path}")
 
     # Create detector
-    detector = FallDetector(confidence=confidence, device=device)
+    detector = FallDetector(model_type=model_type, confidence=confidence, device=device)
 
     # Process video
     result = detector.process_video_file(
@@ -72,6 +74,7 @@ def process_video(input_path: str,
 
 def process_image(input_path: str,
                  output_path: Optional[str] = None,
+                 model_type: str = "onnx",
                  confidence: float = 0.5,
                  device: str = "cuda") -> Dict[str, Any]:
     """Process a single image and detect falls.
@@ -79,6 +82,7 @@ def process_image(input_path: str,
     Args:
         input_path (str): Path to input image file.
         output_path (Optional[str], optional): Path to save annotated image. Defaults to None.
+        model_type (str, optional): Model type - 'pt' for PyTorch or 'onnx' for ONNX FP16. Defaults to "onnx".
         confidence (float, optional): Detection confidence threshold. Defaults to 0.5.
         device (str, optional): Device to run inference on ("cuda" or "cpu"). Defaults to "cuda".
 
@@ -113,7 +117,7 @@ def process_image(input_path: str,
         raise ValueError(f"Cannot read image: {input_path}")
 
     # Create detector
-    detector = FallDetector(confidence=confidence, device=device)
+    detector = FallDetector(model_type=model_type, confidence=confidence, device=device)
 
     # Detect in image
     result = detector.detect_image(image)
@@ -129,6 +133,7 @@ def process_image(input_path: str,
 
 
 def detect_from_array(image: np.ndarray,
+                     model_type: str = "onnx",
                      confidence: float = 0.5,
                      device: str = "cuda") -> Dict[str, Any]:
     """Detect falls from a numpy array image.
@@ -137,6 +142,7 @@ def detect_from_array(image: np.ndarray,
 
     Args:
         image (np.ndarray): Input image in BGR format with shape (H, W, 3).
+        model_type (str, optional): Model type - 'pt' for PyTorch or 'onnx' for ONNX FP16. Defaults to "onnx".
         confidence (float, optional): Detection confidence threshold. Defaults to 0.5.
         device (str, optional): Device to run inference on ("cuda" or "cpu"). Defaults to "cuda".
 
@@ -155,7 +161,7 @@ def detect_from_array(image: np.ndarray,
         >>> cv2.imshow("Result", result["annotated_image"])
     """
     # Create detector
-    detector = FallDetector(confidence=confidence, device=device)
+    detector = FallDetector(model_type=model_type, confidence=confidence, device=device)
 
     # Detect in image
     return detector.detect_image(image)
