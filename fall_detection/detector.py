@@ -9,8 +9,16 @@ Provides FallDetector class using YOLOv8 model.
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Generator, Any
+from typing import Dict, List, Optional, Tuple, Generator, Any, Union
 from ultralytics import YOLO
+
+# ONNX推理支持
+try:
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+    print("Warning: onnxruntime not installed. ONNX model support disabled.")
 
 __all__ = ['FallDetector']
 
@@ -29,7 +37,7 @@ class FallDetector:
         """Initialize the fall detector.
 
         Args:
-            model_path (Optional[str], optional): Path to model file. If None, auto-search for model. Defaults to None.
+            model_path (Optional[str], optional): Path to model file (.pt or .onnx). If None, auto-search for model. Defaults to None.
             device (str, optional): Device to run inference on. Defaults to "cuda".
             confidence (float, optional): Detection confidence threshold. Defaults to 0.5.
 
@@ -38,32 +46,48 @@ class FallDetector:
         """
         self.device = device
         self.confidence = confidence
-        self.model = self._load_model(model_path)
+        self.model_path = None
+        self.model_type = None  # "pt" or "onnx"
+        self.model = None
+        self.ort_session = None
+        self.input_name = None
+        self.input_shape = None
 
-    def _load_model(self, model_path: Optional[str] = None) -> YOLO:
-        """Load YOLO model from file.
+        self._load_model(model_path)
+
+    def _load_model(self, model_path: Optional[str] = None) -> Optional[Union[YOLO, None]]:
+        """Load model from file (supports .pt and .onnx).
 
         Args:
             model_path (Optional[str], optional): Path to the model file. If None, searches in default locations. Defaults to None.
 
         Returns:
-            YOLO: Loaded YOLO model instance ready for inference.
+            Optional[Union[YOLO, None]]: YOLO model for .pt files, None for .onnx files (uses ort_session instead).
 
         Raises:
             FileNotFoundError: If model file cannot be found in specified path or default locations.
+            ValueError: If ONNX model is specified but onnxruntime is not installed.
         """
         if model_path is None:
             # Auto-search for model
             # First try package directory (for pip installed version)
-            package_model = Path(__file__).resolve().parent / 'models' / 'best.pt'
-            if package_model.exists():
-                model_path = str(package_model)
-            else:
+            package_dir = Path(__file__).resolve().parent / 'models'
+
+            # Try ONNX first (faster), then PT
+            for ext in ['.onnx', '_fp16.onnx', '.pt']:
+                model_file = package_dir / f'best{ext}' if ext != '.pt' else package_dir / 'best.pt'
+                if model_file.exists():
+                    model_path = str(model_file)
+                    break
+
+            if model_path is None:
                 # Fallback to project structure (for development)
                 project_root = Path(__file__).resolve().parent.parent
                 possible_paths = [
+                    project_root / 'fall_detection' / 'models' / 'best_fp16.onnx',
+                    project_root / 'fall_detection' / 'models' / 'best.onnx',
+                    project_root / 'fall_detection' / 'models' / 'best.pt',
                     project_root / 'results' / 'models' / 'fall_detection' / 'weights' / 'best.pt',
-                    project_root / 'models' / 'yolo_fall' / 'best.pt',
                 ]
 
                 for path in possible_paths:
@@ -76,7 +100,181 @@ class FallDetector:
                     "Model file not found. Please run training script first or specify model_path."
                 )
 
-        return YOLO(model_path)
+        self.model_path = Path(model_path)
+
+        # Determine model type by extension
+        if self.model_path.suffix.lower() == '.onnx':
+            self.model_type = 'onnx'
+            if not ONNX_AVAILABLE:
+                raise ValueError("ONNX model specified but onnxruntime is not installed. "
+                               "Install it with: pip install onnxruntime-gpu")
+            self._load_onnx_model()
+            return None
+        else:
+            self.model_type = 'pt'
+            self.model = YOLO(str(self.model_path))
+            return self.model
+
+    def _load_onnx_model(self) -> None:
+        """Load ONNX model using onnxruntime."""
+        # 创建推理会话
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if 'cuda' in self.device else ['CPUExecutionProvider']
+        self.ort_session = ort.InferenceSession(str(self.model_path), providers=providers)
+
+        # 获取输入输出信息
+        self.input_name = self.ort_session.get_inputs()[0].name
+        self.input_shape = self.ort_session.get_inputs()[0].shape  # [batch, channel, height, width]
+        self.output_names = [output.name for output in self.ort_session.get_outputs()]
+
+        print(f"ONNX model loaded: {self.model_path.name}")
+        print(f"Input shape: {self.input_shape}, Providers: {providers}")
+
+    def _preprocess_onnx(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess image for ONNX inference.
+
+        Args:
+            image: Input image in BGR format
+
+        Returns:
+            Preprocessed image ready for ONNX inference
+        """
+        # Get input dimensions
+        _, _, height, width = self.input_shape
+
+        # Resize image
+        img = cv2.resize(image, (width, height))
+
+        # Convert BGR to RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Normalize to [0, 1]
+        img = img.astype(np.float32) / 255.0
+
+        # Transpose to CHW format
+        img = np.transpose(img, (2, 0, 1))
+
+        # Add batch dimension
+        img = np.expand_dims(img, axis=0)
+
+        return img
+
+    def _postprocess_onnx(self, outputs: List[np.ndarray], original_shape: Tuple[int, int]) -> List[Dict]:
+        """Postprocess ONNX outputs to detection format.
+
+        Args:
+            outputs: Raw ONNX model outputs
+            original_shape: Original image shape (height, width)
+
+        Returns:
+            List of detections
+        """
+        # YOLOv8 ONNX输出格式: [batch, 84, 8400]
+        # 84 = 4 (bbox) + 80 (classes) 或 4 + 2 (for 2 classes)
+        predictions = outputs[0][0]  # Remove batch dimension
+
+        # Get dimensions
+        num_classes = predictions.shape[0] - 4
+        num_boxes = predictions.shape[1]
+
+        # Extract boxes and scores
+        boxes = predictions[:4, :].T  # [8400, 4]
+        scores = predictions[4:, :].T  # [8400, num_classes]
+
+        # Apply confidence threshold
+        max_scores = np.max(scores, axis=1)
+        mask = max_scores > self.confidence
+
+        if not np.any(mask):
+            return []
+
+        # Filter by confidence
+        boxes = boxes[mask]
+        scores = scores[mask]
+        max_scores = max_scores[mask]
+        class_ids = np.argmax(scores, axis=1)
+
+        # Convert from YOLO format to xyxy
+        detections = []
+        h_orig, w_orig = original_shape
+        _, _, h_model, w_model = self.input_shape
+
+        for i in range(len(boxes)):
+            # YOLO format: [cx, cy, w, h]
+            cx, cy, w, h = boxes[i]
+
+            # Convert to xyxy
+            x1 = (cx - w/2) * w_orig / w_model
+            y1 = (cy - h/2) * h_orig / h_model
+            x2 = (cx + w/2) * w_orig / w_model
+            y2 = (cy + h/2) * h_orig / h_model
+
+            detections.append({
+                'x1': max(0, int(x1)),
+                'y1': max(0, int(y1)),
+                'x2': min(w_orig, int(x2)),
+                'y2': min(h_orig, int(y2)),
+                'confidence': float(max_scores[i]),
+                'class': int(class_ids[i])
+            })
+
+        # Apply NMS
+        detections = self._nms(detections, iou_threshold=0.45)
+        return detections
+
+    def _nms(self, detections: List[Dict], iou_threshold: float = 0.45) -> List[Dict]:
+        """Apply Non-Maximum Suppression.
+
+        Args:
+            detections: List of detection dictionaries
+            iou_threshold: IoU threshold for NMS
+
+        Returns:
+            Filtered detections after NMS
+        """
+        if not detections:
+            return []
+
+        # Convert to arrays for easier manipulation
+        boxes = np.array([[d['x1'], d['y1'], d['x2'], d['y2']] for d in detections])
+        scores = np.array([d['confidence'] for d in detections])
+        classes = np.array([d['class'] for d in detections])
+
+        # Apply NMS per class
+        keep = []
+        for cls in np.unique(classes):
+            cls_mask = classes == cls
+            cls_boxes = boxes[cls_mask]
+            cls_scores = scores[cls_mask]
+            cls_indices = np.where(cls_mask)[0]
+
+            # Sort by score
+            order = cls_scores.argsort()[::-1]
+
+            keep_cls = []
+            while order.size > 0:
+                i = order[0]
+                keep_cls.append(cls_indices[i])
+
+                # Calculate IoU
+                xx1 = np.maximum(cls_boxes[i, 0], cls_boxes[order[1:], 0])
+                yy1 = np.maximum(cls_boxes[i, 1], cls_boxes[order[1:], 1])
+                xx2 = np.minimum(cls_boxes[i, 2], cls_boxes[order[1:], 2])
+                yy2 = np.minimum(cls_boxes[i, 3], cls_boxes[order[1:], 3])
+
+                w = np.maximum(0, xx2 - xx1)
+                h = np.maximum(0, yy2 - yy1)
+
+                inter = w * h
+                area1 = (cls_boxes[i, 2] - cls_boxes[i, 0]) * (cls_boxes[i, 3] - cls_boxes[i, 1])
+                area2 = (cls_boxes[order[1:], 2] - cls_boxes[order[1:], 0]) * \
+                       (cls_boxes[order[1:], 3] - cls_boxes[order[1:], 1])
+
+                iou = inter / (area1 + area2 - inter)
+                order = order[np.where(iou <= iou_threshold)[0] + 1]
+
+            keep.extend(keep_cls)
+
+        return [detections[i] for i in keep]
 
     def _draw_annotation(self, image: np.ndarray, x1: int, y1: int, x2: int, y2: int,
                         class_name: str, confidence: float, color: tuple, thickness: int) -> None:
@@ -134,48 +332,68 @@ class FallDetector:
             >>> if result["fall_detected"]:
             ...     print(f"Scene status: {result['scene_status']}")
         """
-        # Run detection
-        results = self.model(image,
-                            verbose=False,
-                            device=self.device,
-                            conf=self.confidence)
-
-        # Parse results
         detections = []
         fall_count = 0
         normal_count = 0
         annotated_image = image.copy()
 
-        for r in results:
-            if r.boxes is not None:
-                for box in r.boxes:
-                    # Extract coordinates and class
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                    cls = int(box.cls[0])
-                    conf = float(box.conf[0])
+        if self.model_type == 'onnx':
+            # ONNX推理路径
+            # Preprocess image
+            preprocessed = self._preprocess_onnx(image)
 
-                    # Determine class
-                    if cls == 0:  # Normal
-                        class_name = "Normal"
-                        color = (0, 255, 0)  # Green
-                        thickness = 2
-                        normal_count += 1
-                    else:  # Fall
-                        class_name = "Fall"
-                        color = (0, 0, 255)  # Red
-                        thickness = 3
-                        fall_count += 1
+            # Run inference
+            outputs = self.ort_session.run(self.output_names, {self.input_name: preprocessed})
 
-                    # Save detection result
-                    detections.append({
-                        "class": class_name,
-                        "confidence": conf,
-                        "bbox": [x1, y1, x2, y2]
-                    })
+            # Postprocess results
+            onnx_detections = self._postprocess_onnx(outputs, image.shape[:2])
 
-                    # Draw annotation - only draw highest confidence detection
-                    # We'll draw after sorting
+            # Convert ONNX format to standard format
+            for det in onnx_detections:
+                # Determine class
+                if det['class'] == 0:  # Normal
+                    class_name = "Normal"
+                    normal_count += 1
+                else:  # Fall
+                    class_name = "Fall"
+                    fall_count += 1
+
+                detections.append({
+                    "class": class_name,
+                    "confidence": det['confidence'],
+                    "bbox": [det['x1'], det['y1'], det['x2'], det['y2']]
+                })
+
+        else:
+            # 原始PyTorch推理路径
+            results = self.model(image,
+                                verbose=False,
+                                device=self.device,
+                                conf=self.confidence)
+
+            for r in results:
+                if r.boxes is not None:
+                    for box in r.boxes:
+                        # Extract coordinates and class
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                        cls = int(box.cls[0])
+                        conf = float(box.conf[0])
+
+                        # Determine class
+                        if cls == 0:  # Normal
+                            class_name = "Normal"
+                            normal_count += 1
+                        else:  # Fall
+                            class_name = "Fall"
+                            fall_count += 1
+
+                        # Save detection result
+                        detections.append({
+                            "class": class_name,
+                            "confidence": conf,
+                            "bbox": [x1, y1, x2, y2]
+                        })
 
         # Sort detections by confidence (highest first)
         detections.sort(key=lambda x: x["confidence"], reverse=True)
