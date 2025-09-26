@@ -1,12 +1,13 @@
 [project]
 name = "human-fall-detection"
-version = "0.1.1"
+version = "0.1.2"
 description = "Static fall detection based on YOLOv8n"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "ipython>=9.5.0",
     "onnx>=1.19.0",
+    "onnxruntime>=1.23.0",
     "pip>=25.2",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
